@@ -31,13 +31,17 @@ export async function getHabitInsights(input: HabitInsightsInput): Promise<Habit
   return habitInsightsFlow(input);
 }
 
+const PromptInputSchema = z.object({
+  habitDataString: z.string(),
+});
+
 const habitInsightsPrompt = ai.definePrompt({
   name: 'habitInsightsPrompt',
-  input: {schema: HabitInsightsInputSchema},
+  input: {schema: PromptInputSchema},
   output: {schema: HabitInsightsOutputSchema},
   prompt: `You are a helpful habit coach. Analyze the user's habit data and provide 2-3 actionable insights. Keep it motivational and concise.
 
-Here is my habit data: {{{JSON.stringify habitData}}}.
+Here is my habit data: {{{habitDataString}}}.
 What insights can you give me to improve my habits?`,
 });
 
@@ -48,7 +52,9 @@ const habitInsightsFlow = ai.defineFlow(
     outputSchema: HabitInsightsOutputSchema,
   },
   async input => {
-    const {output} = await habitInsightsPrompt(input);
+    const {output} = await habitInsightsPrompt({ 
+      habitDataString: JSON.stringify(input.habitData) 
+    });
     return output!;
   }
 );
