@@ -1,18 +1,20 @@
+
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { Habit } from '@/types';
 import { getHabitInsights } from '@/ai/flows/habit-insights';
-import { useToast } from "@/hooks/use-toast"
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from '@/context/AuthContext';
 
-const HABITS_STORAGE_KEY = 'habits';
+const HABITS_STORAGE_KEY_PREFIX = 'habits';
 
 export function useHabits() {
+  const { user } = useAuth();
   const [habits, setHabits] = useState<Habit[]>([]);
   const [aiInsight, setAiInsight] = useState<string | null>(null);
   const [isLoadingInsight, setIsLoadingInsight] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
-  const isInitialMount = useRef(true);
   const { toast } = useToast();
 
   const getTodayString = () => new Date().toISOString().split('T')[0];
@@ -24,49 +26,58 @@ export function useHabits() {
   }
 
   useEffect(() => {
-    try {
-      const storedHabits = localStorage.getItem(HABITS_STORAGE_KEY);
-      if (storedHabits) {
-        const parsedHabits: Habit[] = JSON.parse(storedHabits);
-        
-        const todayStr = getTodayString();
-        const yesterdayStr = getYesterdayString();
-
-        // Daily reset and streak check logic
-        const updatedHabits = parsedHabits.map(habit => {
-          const sortedHistory = habit.history.sort();
-          const lastCompletionDate = sortedHistory[sortedHistory.length - 1];
+    if (user) {
+      const userHabitsKey = `${HABITS_STORAGE_KEY_PREFIX}_${user.uid}`;
+      try {
+        const storedHabits = localStorage.getItem(userHabitsKey);
+        if (storedHabits) {
+          const parsedHabits: Habit[] = JSON.parse(storedHabits);
           
-          let currentStreak = habit.streak;
-          if (lastCompletionDate && lastCompletionDate < yesterdayStr) {
-             currentStreak = 0;
-          }
+          const todayStr = getTodayString();
+          const yesterdayStr = getYesterdayString();
 
-          return {
-            ...habit,
-            completedToday: lastCompletionDate === todayStr,
-            streak: currentStreak,
-          };
-        });
-        
-        setHabits(updatedHabits);
+          const updatedHabits = parsedHabits.map(habit => {
+            const sortedHistory = habit.history.sort();
+            const lastCompletionDate = sortedHistory[sortedHistory.length - 1];
+            
+            let currentStreak = habit.streak;
+            if (lastCompletionDate && lastCompletionDate < yesterdayStr) {
+               currentStreak = 0;
+            }
+
+            return {
+              ...habit,
+              completedToday: lastCompletionDate === todayStr,
+              streak: currentStreak,
+            };
+          });
+          
+          setHabits(updatedHabits);
+        } else {
+          setHabits([]);
+        }
+      } catch (error) {
+        console.error("Failed to load habits from localStorage", error);
+        setHabits([]);
       }
-    } catch (error) {
-      console.error("Failed to load habits from localStorage", error);
+    } else {
+      setHabits([]);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
-    if (isInitialMount.current) {
-        isInitialMount.current = false;
-        return;
+    if (user) {
+      const userHabitsKey = `${HABITS_STORAGE_KEY_PREFIX}_${user.uid}`;
+      try {
+        // Avoid saving empty array on initial load for a new user
+        if (habits.length > 0 || localStorage.getItem(userHabitsKey)) {
+          localStorage.setItem(userHabitsKey, JSON.stringify(habits));
+        }
+      } catch (error) {
+        console.error("Failed to save habits to localStorage", error);
+      }
     }
-    try {
-      localStorage.setItem(HABITS_STORAGE_KEY, JSON.stringify(habits));
-    } catch (error) {
-      console.error("Failed to save habits to localStorage", error);
-    }
-  }, [habits]);
+  }, [habits, user]);
 
   const addHabit = useCallback((name: string) => {
     const newHabit: Habit = {
@@ -91,10 +102,11 @@ export function useHabits() {
           for (let i = newHistory.length - 1; i > 0; i--) {
             const current = new Date(newHistory[i]);
             const prevDate = new Date(newHistory[i-1]);
-            const diffDays = (current.getTime() - prevDate.getTime()) / (1000 * 3600 * 24);
+            const diffDays = Math.round((current.getTime() - prevDate.getTime()) / (1000 * 3600 * 24));
+            
             if(diffDays === 1) {
               newStreak++;
-            } else {
+            } else if (diffDays > 1) {
               break;
             }
           }

@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -6,11 +7,18 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
-import { Flame, Check, Sparkles, Loader2 } from 'lucide-react';
+import { Flame, Check, Sparkles, Loader2, LogOut } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useAuth } from '@/context/AuthContext';
+import { auth } from '@/lib/firebase';
+import { signOut } from 'firebase/auth';
+import { useToast } from '@/hooks/use-toast';
 
 export default function HabitTracker() {
   const [hasMounted, setHasMounted] = useState(false);
+  const { user } = useAuth();
+  const { toast } = useToast();
+  
   const { 
     habits, 
     addHabit, 
@@ -36,6 +44,23 @@ export default function HabitTracker() {
 
   const handleGetInsights = async () => {
     await getAIInsights();
+  };
+  
+  const handleLogout = async () => {
+    if (!auth) return;
+    try {
+      await signOut(auth);
+      toast({
+        title: "Logged Out",
+        description: "You have been successfully logged out.",
+      });
+    } catch (error) {
+       toast({
+        title: "Logout Failed",
+        description: "There was a problem logging out.",
+        variant: "destructive"
+      });
+    }
   };
   
   if (!hasMounted) {
@@ -68,11 +93,26 @@ export default function HabitTracker() {
 
   return (
     <div className="container mx-auto max-w-3xl p-4 sm:p-6 md:p-8">
-      <header className="text-center mb-8">
-        <h1 className="text-4xl font-bold tracking-tight mb-2 flex items-center justify-center gap-3">
-          <Sparkles className="text-primary" /> HabitAI
-        </h1>
-        <p className="text-muted-foreground">Track your habits and get AI-powered insights.</p>
+      <header className="mb-8">
+          <div className="flex justify-between items-center mb-2">
+              <div className="w-24 sm:w-48"></div>
+              <div className="text-center">
+                  <h1 className="text-2xl sm:text-4xl font-bold tracking-tight flex items-center justify-center gap-3">
+                      <Sparkles className="text-primary" /> HabitAI
+                  </h1>
+              </div>
+              <div className="w-24 sm:w-48 flex items-center justify-end gap-2">
+              {user && (
+                  <>
+                    <span className="text-sm text-muted-foreground hidden sm:inline">{user.email}</span>
+                    <Button variant="ghost" size="icon" onClick={handleLogout} aria-label="Log out">
+                        <LogOut className="h-5 w-5" />
+                    </Button>
+                  </>
+              )}
+              </div>
+          </div>
+          <p className="text-muted-foreground text-center">Track your habits and get AI-powered insights.</p>
       </header>
       <main className="flex flex-col gap-6">
         <Card>
