@@ -23,7 +23,9 @@ const HabitInsightsInputSchema = z.object({
 export type HabitInsightsInput = z.infer<typeof HabitInsightsInputSchema>;
 
 const HabitInsightsOutputSchema = z.object({
-  insights: z.string().describe('AI-generated insights and suggestions for improving habits.'),
+  positiveReinforcement: z.string().describe("A short, positive comment about a high-performing habit. Focus on the one with the best streak or completion rate."),
+  areasForImprovement: z.string().describe("A short, constructive suggestion for a low-performing habit. Gently nudge the user to focus on it."),
+  motivationalQuote: z.string().describe("A short, inspiring quote related to habits, consistency, or self-improvement."),
 });
 export type HabitInsightsOutput = z.infer<typeof HabitInsightsOutputSchema>;
 
@@ -39,10 +41,16 @@ const habitInsightsPrompt = ai.definePrompt({
   name: 'habitInsightsPrompt',
   input: {schema: PromptInputSchema},
   output: {schema: HabitInsightsOutputSchema},
-  prompt: `You are a helpful habit coach. Analyze the user's habit data and provide 2-3 actionable insights. Keep it motivational and concise.
+  prompt: `You are a helpful and motivating habit coach. Analyze the user's habit data provided below.
+Your goal is to provide structured, concise, and actionable feedback.
 
-Here is my habit data: {{{habitDataString}}}.
-What insights can you give me to improve my habits?`,
+Habit Data:
+{{{habitDataString}}}
+
+Based on this data, provide the following:
+1.  **Positive Reinforcement:** Find the user's most successful habit (longest streak or highest completion) and give them a brief, encouraging compliment about it.
+2.  **Area for Improvement:** Identify a habit the user is struggling with (low streak or completion) and offer a gentle, supportive suggestion to help them get back on track.
+3.  **Motivational Quote:** Provide a short, relevant quote to inspire them.`,
 });
 
 const habitInsightsFlow = ai.defineFlow(
@@ -53,7 +61,7 @@ const habitInsightsFlow = ai.defineFlow(
   },
   async input => {
     const {output} = await habitInsightsPrompt({ 
-      habitDataString: JSON.stringify(input.habitData) 
+      habitDataString: JSON.stringify(input.habitData, null, 2) 
     });
     return output!;
   }

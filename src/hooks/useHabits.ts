@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import type { Habit } from '@/types';
-import { getHabitInsights } from '@/ai/flows/habit-insights';
+import { getHabitInsights, type HabitInsightsOutput } from '@/ai/flows/habit-insights';
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from '@/context/AuthContext';
 
@@ -12,7 +12,7 @@ const HABITS_STORAGE_KEY_PREFIX = 'habits';
 export function useHabits() {
   const { user } = useAuth();
   const [habits, setHabits] = useState<Habit[]>([]);
-  const [aiInsight, setAiInsight] = useState<string | null>(null);
+  const [aiInsight, setAiInsight] = useState<HabitInsightsOutput | null>(null);
   const [isLoadingInsight, setIsLoadingInsight] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const { toast } = useToast();
@@ -147,7 +147,7 @@ export function useHabits() {
 
     try {
       const result = await getHabitInsights({ habitData });
-      setAiInsight(result.insights);
+      setAiInsight(result);
     } catch (error) {
       console.error("Error fetching AI insights:", error);
       setAiError('⚠️ Error getting insights. Please try again.');
