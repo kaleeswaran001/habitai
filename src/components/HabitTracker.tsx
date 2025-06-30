@@ -15,7 +15,6 @@ import { signOut } from 'firebase/auth';
 import { useToast } from '@/hooks/use-toast';
 
 export default function HabitTracker() {
-  const [hasMounted, setHasMounted] = useState(false);
   const { user } = useAuth();
   const { toast } = useToast();
   
@@ -26,13 +25,10 @@ export default function HabitTracker() {
     getAIInsights, 
     aiInsight, 
     isLoadingInsight, 
-    aiError
+    aiError,
+    isLoadingHabits
   } = useHabits();
   const [newHabitName, setNewHabitName] = useState('');
-
-  useEffect(() => {
-    setHasMounted(true);
-  }, []);
 
   const handleAddHabit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,28 +59,50 @@ export default function HabitTracker() {
     }
   };
   
-  if (!hasMounted) {
+  if (isLoadingHabits) {
     return (
       <div className="container mx-auto max-w-3xl p-4 sm:p-6 md:p-8">
-        <header className="text-center mb-8">
-          <Skeleton className="h-10 w-3/4 mx-auto mb-2" />
-          <Skeleton className="h-4 w-1/2 mx-auto" />
+        <header className="mb-8">
+          <div className="flex justify-between items-center mb-2">
+            <div className="w-24 sm:w-48"></div>
+            <div className="text-center">
+              <h1 className="text-2xl sm:text-4xl font-bold tracking-tight flex items-center justify-center gap-3">
+                <Sparkles className="text-primary" /> HabitAI
+              </h1>
+            </div>
+            <div className="w-24 sm:w-48 flex items-center justify-end gap-2">
+              <Skeleton className="h-6 w-24 hidden sm:inline-block" />
+              <Skeleton className="h-10 w-10 rounded-full" />
+            </div>
+          </div>
+          <p className="text-muted-foreground text-center">Track your habits and get AI-powered insights.</p>
         </header>
         <main className="flex flex-col gap-6">
           <Card>
-            <CardHeader><Skeleton className="h-6 w-1/3" /></CardHeader>
-            <CardContent><Skeleton className="h-10 w-full" /></CardContent>
-          </Card>
-          <Card>
-            <CardHeader><Skeleton className="h-6 w-1/4" /></CardHeader>
-            <CardContent className="space-y-4">
-              <Skeleton className="h-16 w-full" />
-              <Skeleton className="h-16 w-full" />
+            <CardHeader><CardTitle>Add New Habit</CardTitle></CardHeader>
+            <CardContent>
+                <div className="flex flex-col sm:flex-row gap-2">
+                    <Skeleton className="h-10 flex-grow" />
+                    <Skeleton className="h-10 w-24" />
+                </div>
             </CardContent>
           </Card>
           <Card>
-            <CardHeader><Skeleton className="h-6 w-1/3" /></CardHeader>
-            <CardContent><Skeleton className="h-10 w-1/2" /></CardContent>
+            <CardHeader><CardTitle>My Habits</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <Skeleton className="h-20 w-full rounded-lg" />
+              <Skeleton className="h-20 w-full rounded-lg" />
+              <Skeleton className="h-20 w-full rounded-lg" />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+                <CardTitle>AI Insights</CardTitle>
+                <CardDescription>Get personalized advice on your habits.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <Skeleton className="h-10 w-48" />
+            </CardContent>
           </Card>
         </main>
       </div>

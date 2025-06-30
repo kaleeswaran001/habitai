@@ -6,123 +6,142 @@ import type { Habit } from '@/types';
 import { getHabitInsights, type HabitInsightsOutput } from '@/ai/flows/habit-insights';
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from '@/context/AuthContext';
-
-const HABITS_STORAGE_KEY_PREFIX = 'habits';
+import { db } from '@/lib/firebase';
+import {
+  collection,
+  query,
+  where,
+  onSnapshot,
+  addDoc,
+  doc,
+  updateDoc,
+  serverTimestamp,
+  writeBatch,
+} from 'firebase/firestore';
 
 export function useHabits() {
   const { user } = useAuth();
   const [habits, setHabits] = useState<Habit[]>([]);
+  const [isLoadingHabits, setIsLoadingHabits] = useState(true);
   const [aiInsight, setAiInsight] = useState<HabitInsightsOutput | null>(null);
   const [isLoadingInsight, setIsLoadingInsight] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const { toast } = useToast();
 
   const getTodayString = () => new Date().toISOString().split('T')[0];
-  
+
   const getYesterdayString = () => {
     const d = new Date();
     d.setDate(d.getDate() - 1);
     return d.toISOString().split('T')[0];
-  }
+  };
 
   useEffect(() => {
-    if (user) {
-      const userHabitsKey = `${HABITS_STORAGE_KEY_PREFIX}_${user.uid}`;
-      try {
-        const storedHabits = localStorage.getItem(userHabitsKey);
-        if (storedHabits) {
-          const parsedHabits: Habit[] = JSON.parse(storedHabits);
-          
-          const todayStr = getTodayString();
-          const yesterdayStr = getYesterdayString();
+    if (user && db) {
+      setIsLoadingHabits(true);
+      const habitsCollection = collection(db, 'habits');
+      const q = query(habitsCollection, where('userId', '==', user.uid));
 
-          const updatedHabits = parsedHabits.map(habit => {
-            const sortedHistory = habit.history.sort();
-            const lastCompletionDate = sortedHistory[sortedHistory.length - 1];
-            
-            let currentStreak = habit.streak;
-            if (lastCompletionDate && lastCompletionDate < yesterdayStr) {
-               currentStreak = 0;
-            }
+      const unsubscribe = onSnapshot(q, async (querySnapshot) => {
+        const todayStr = getTodayString();
+        const yesterdayStr = getYesterdayString();
+        const batch = writeBatch(db);
+        
+        const habitsData: Habit[] = querySnapshot.docs.map(doc => {
+          const data = doc.data();
+          const history = data.history?.sort() || [];
+          const lastCompletionDate = history.length > 0 ? history[history.length - 1] : null;
 
-            return {
-              ...habit,
-              completedToday: lastCompletionDate === todayStr,
-              streak: currentStreak,
-            };
-          });
-          
-          setHabits(updatedHabits);
-        } else {
-          setHabits([]);
-        }
-      } catch (error) {
-        console.error("Failed to load habits from localStorage", error);
-        setHabits([]);
-      }
-    } else {
-      setHabits([]);
-    }
-  }, [user]);
-
-  useEffect(() => {
-    if (user) {
-      const userHabitsKey = `${HABITS_STORAGE_KEY_PREFIX}_${user.uid}`;
-      try {
-        // Avoid saving empty array on initial load for a new user
-        if (habits.length > 0 || localStorage.getItem(userHabitsKey)) {
-          localStorage.setItem(userHabitsKey, JSON.stringify(habits));
-        }
-      } catch (error) {
-        console.error("Failed to save habits to localStorage", error);
-      }
-    }
-  }, [habits, user]);
-
-  const addHabit = useCallback((name: string) => {
-    const newHabit: Habit = {
-      id: crypto.randomUUID(),
-      name,
-      streak: 0,
-      history: [],
-      completion: 0,
-      completedToday: false,
-    };
-    setHabits(prev => [...prev, newHabit]);
-  }, []);
-
-  const trackHabit = useCallback((id: string) => {
-    setHabits(prev => {
-      const todayStr = getTodayString();
-      return prev.map(habit => {
-        if (habit.id === id && !habit.completedToday) {
-          const newHistory = [...habit.history, todayStr].sort();
-          
-          let newStreak = 1;
-          for (let i = newHistory.length - 1; i > 0; i--) {
-            const current = new Date(newHistory[i]);
-            const prevDate = new Date(newHistory[i-1]);
-            const diffDays = Math.round((current.getTime() - prevDate.getTime()) / (1000 * 3600 * 24));
-            
-            if(diffDays === 1) {
-              newStreak++;
-            } else if (diffDays > 1) {
-              break;
+          let currentStreak = data.streak || 0;
+          if (lastCompletionDate && lastCompletionDate < yesterdayStr) {
+            currentStreak = 0;
+            // If the streak is broken, update it in Firestore
+            if (data.streak > 0) {
+               batch.update(doc.ref, { streak: 0 });
             }
           }
-
+          
           return {
-            ...habit,
-            history: newHistory,
-            completedToday: true,
-            streak: newStreak,
-            completion: Math.min(100, habit.completion + 10),
+            id: doc.id,
+            name: data.name,
+            streak: currentStreak,
+            history: history,
+            completion: data.completion || 0,
+            completedToday: lastCompletionDate === todayStr,
           };
+        });
+
+        // Commit any streak reset updates
+        try {
+            await batch.commit();
+        } catch(e) {
+            // It's possible the batch is empty, which throws an error. We can ignore it.
         }
-        return habit;
+
+        setHabits(habitsData);
+        setIsLoadingHabits(false);
+      }, (error) => {
+        console.error("Error fetching habits:", error);
+        toast({ title: "Error", description: "Could not fetch habits.", variant: "destructive" });
+        setIsLoadingHabits(false);
       });
-    });
-  }, []);
+
+      return () => unsubscribe();
+    } else {
+      // Not logged in or Firebase not configured
+      setHabits([]);
+      setIsLoadingHabits(false);
+    }
+  }, [user, toast]);
+
+  const addHabit = useCallback(async (name: string) => {
+    if (!user || !db) {
+        toast({ title: "Error", description: "You must be logged in to add habits.", variant: "destructive" });
+        return;
+    }
+    try {
+      await addDoc(collection(db, 'habits'), {
+        userId: user.uid,
+        name,
+        streak: 0,
+        history: [],
+        completion: 0,
+        createdAt: serverTimestamp(),
+      });
+      toast({ title: "Habit Added", description: `"${name}" has been added.` });
+    } catch (error) {
+      console.error("Error adding habit:", error);
+      toast({ title: "Error", description: "Could not add habit.", variant: "destructive" });
+    }
+  }, [user, toast]);
+
+  const trackHabit = useCallback(async (id: string) => {
+    if (!user || !db) return;
+
+    const habit = habits.find(h => h.id === id);
+    if (!habit || habit.completedToday) return;
+
+    const todayStr = getTodayString();
+    const yesterdayStr = getYesterdayString();
+    
+    const completedYesterday = habit.history.includes(yesterdayStr);
+    const newStreak = completedYesterday ? habit.streak + 1 : 1;
+    
+    // Ensure history is unique and sorted
+    const newHistory = [...new Set([...habit.history, todayStr])].sort();
+
+    try {
+      const habitRef = doc(db, 'habits', id);
+      await updateDoc(habitRef, {
+        history: newHistory,
+        streak: newStreak,
+        completion: Math.min(100, habit.completion + 10),
+      });
+    } catch (error) {
+       console.error("Error tracking habit:", error);
+       toast({ title: "Error", description: "Could not update habit.", variant: "destructive" });
+    }
+  }, [user, habits, toast]);
 
   const getAIInsights = useCallback(async () => {
     if (habits.length === 0) {
@@ -161,5 +180,5 @@ export function useHabits() {
     }
   }, [habits, toast]);
 
-  return { habits, addHabit, trackHabit, getAIInsights, aiInsight, isLoadingInsight, aiError };
+  return { habits, addHabit, trackHabit, getAIInsights, aiInsight, isLoadingInsight, aiError, isLoadingHabits };
 }
