@@ -46,6 +46,7 @@ export function useHabits() {
         const todayStr = getTodayString();
         const yesterdayStr = getYesterdayString();
         const batch = writeBatch(db);
+        let writesInBatch = 0;
         
         const habitsData: Habit[] = querySnapshot.docs.map(doc => {
           const data = doc.data();
@@ -58,6 +59,7 @@ export function useHabits() {
             // If the streak is broken, update it in Firestore
             if (data.streak > 0) {
                batch.update(doc.ref, { streak: 0 });
+               writesInBatch++;
             }
           }
           
@@ -71,11 +73,14 @@ export function useHabits() {
           };
         });
 
-        // Commit any streak reset updates
-        try {
-            await batch.commit();
-        } catch(e) {
-            // It's possible the batch is empty, which throws an error. We can ignore it.
+        // Commit any streak reset updates if necessary
+        if (writesInBatch > 0) {
+          try {
+              await batch.commit();
+          } catch(e) {
+              console.error("Error resetting streaks:", e);
+              toast({ title: "Error", description: "Could not update habit streaks.", variant: "destructive" });
+          }
         }
 
         setHabits(habitsData);
