@@ -16,7 +16,7 @@ import {
   doc,
   updateDoc,
   serverTimestamp,
-  writeBatch,
+  arrayUnion,
 } from 'firebase/firestore';
 
 export function useHabits() {
@@ -30,78 +30,47 @@ export function useHabits() {
 
   const getTodayString = () => new Date().toISOString().split('T')[0];
 
-  const getYesterdayString = () => {
-    const d = new Date();
-    d.setDate(d.getDate() - 1);
-    return d.toISOString().split('T')[0];
-  };
-
+  // Listener for habit changes
   useEffect(() => {
-    if (user && db) {
-      setIsLoadingHabits(true);
-      const habitsCollection = collection(db, 'habits');
-      const q = query(habitsCollection, where('userId', '==', user.uid));
-
-      const unsubscribe = onSnapshot(q, async (querySnapshot) => {
-        const todayStr = getTodayString();
-        const yesterdayStr = getYesterdayString();
-        const batch = writeBatch(db);
-        let writesInBatch = 0;
-        
-        const habitsData: Habit[] = querySnapshot.docs.map(doc => {
-          const data = doc.data();
-          const history = data.history?.sort() || [];
-          const lastCompletionDate = history.length > 0 ? history[history.length - 1] : null;
-
-          let currentStreak = data.streak || 0;
-          if (lastCompletionDate && lastCompletionDate < yesterdayStr) {
-            currentStreak = 0;
-            // If the streak is broken, update it in Firestore
-            if (data.streak > 0) {
-               batch.update(doc.ref, { streak: 0 });
-               writesInBatch++;
-            }
-          }
-          
-          return {
-            id: doc.id,
-            name: data.name,
-            streak: currentStreak,
-            history: history,
-            completion: data.completion || 0,
-            completedToday: lastCompletionDate === todayStr,
-          };
-        });
-
-        // Commit any streak reset updates if necessary
-        if (writesInBatch > 0) {
-          try {
-              await batch.commit();
-          } catch(e) {
-              console.error("Error resetting streaks:", e);
-              toast({ title: "Error", description: "Could not update habit streaks.", variant: "destructive" });
-          }
-        }
-
-        setHabits(habitsData);
-        setIsLoadingHabits(false);
-      }, (error) => {
-        console.error("Error fetching habits:", error);
-        toast({ title: "Error", description: "Could not fetch habits.", variant: "destructive" });
-        setIsLoadingHabits(false);
-      });
-
-      return () => unsubscribe();
-    } else {
-      // Not logged in or Firebase not configured
+    if (!user || !db) {
       setHabits([]);
       setIsLoadingHabits(false);
+      return;
     }
-  }, [user, toast]);
+
+    setIsLoadingHabits(true);
+    const habitsCollection = collection(db, 'habits');
+    const q = query(habitsCollection, where('userId', '==', user.uid));
+
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const todayStr = getTodayString();
+      const habitsData: Habit[] = querySnapshot.docs.map(doc => {
+        const data = doc.data();
+        const history = data.history?.sort() || [];
+        return {
+          id: doc.id,
+          name: data.name,
+          streak: data.streak || 0,
+          history: history,
+          completion: data.completion || 0,
+          completedToday: history.includes(todayStr),
+        };
+      });
+
+      setHabits(habitsData);
+      setIsLoadingHabits(false);
+    }, (error: any) => {
+      console.error("Error fetching habits:", error);
+      toast({ title: "Error fetching habits", description: error.message, variant: "destructive" });
+      setIsLoadingHabits(false);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
 
   const addHabit = useCallback(async (name: string) => {
     if (!user || !db) {
-        toast({ title: "Error", description: "You must be logged in to add habits.", variant: "destructive" });
+        toast({ title: "Not logged in", description: "You must be logged in to add habits.", variant: "destructive" });
         return;
     }
     try {
@@ -114,9 +83,9 @@ export function useHabits() {
         createdAt: serverTimestamp(),
       });
       toast({ title: "Habit Added", description: `"${name}" has been added.` });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error adding habit:", error);
-      toast({ title: "Error", description: "Could not add habit.", variant: "destructive" });
+      toast({ title: "Error adding habit", description: error.message, variant: "destructive" });
     }
   }, [user, toast]);
 
@@ -127,24 +96,28 @@ export function useHabits() {
     if (!habit || habit.completedToday) return;
 
     const todayStr = getTodayString();
-    const yesterdayStr = getYesterdayString();
+    const yesterdayStr = (() => {
+        const d = new Date();
+        d.setDate(d.getDate() - 1);
+        return d.toISOString().split('T')[0];
+    })();
     
-    const completedYesterday = habit.history.includes(yesterdayStr);
+    const lastCompletionDate = habit.history.length > 0 ? habit.history[habit.history.length - 1] : null;
+    const completedYesterday = lastCompletionDate === yesterdayStr;
+    
+    // If the last completion was yesterday, increment streak. Otherwise, start a new streak of 1.
     const newStreak = completedYesterday ? habit.streak + 1 : 1;
     
-    // Ensure history is unique and sorted
-    const newHistory = [...new Set([...habit.history, todayStr])].sort();
-
     try {
       const habitRef = doc(db, 'habits', id);
       await updateDoc(habitRef, {
-        history: newHistory,
+        history: arrayUnion(todayStr), // Atomically add the new date, prevents duplicates
         streak: newStreak,
         completion: Math.min(100, habit.completion + 10),
       });
-    } catch (error) {
+    } catch (error: any) {
        console.error("Error tracking habit:", error);
-       toast({ title: "Error", description: "Could not update habit.", variant: "destructive" });
+       toast({ title: "Error updating habit", description: error.message, variant: "destructive" });
     }
   }, [user, habits, toast]);
 
