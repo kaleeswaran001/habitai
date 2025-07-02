@@ -13,6 +13,7 @@ import { useAuth } from '@/context/AuthContext';
 import { auth } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
 import { useToast } from '@/hooks/use-toast';
+import ProgressChart from './ProgressChart';
 
 export default function HabitTracker() {
   const { user } = useAuth();
@@ -93,6 +94,15 @@ export default function HabitTracker() {
               <Skeleton className="h-20 w-full rounded-lg" />
               <Skeleton className="h-20 w-full rounded-lg" />
               <Skeleton className="h-20 w-full rounded-lg" />
+            </CardContent>
+          </Card>
+           <Card>
+            <CardHeader>
+                <CardTitle><Skeleton className="h-6 w-36 rounded-md" /></CardTitle>
+                <CardDescription><Skeleton className="h-4 w-48 rounded-md mt-1" /></CardDescription>
+            </CardHeader>
+            <CardContent>
+                <Skeleton className="h-[200px] w-full" />
             </CardContent>
           </Card>
           <Card>
@@ -191,6 +201,8 @@ export default function HabitTracker() {
             )}
           </CardContent>
         </Card>
+
+        <ProgressChart habits={habits} />
 
         <Card>
           <CardHeader>
